@@ -3,7 +3,7 @@ import os
 from database.db import Base, engine
 import pandas as pd
 import sqlite3
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY")
@@ -13,6 +13,10 @@ Base.metadata.create_all(engine)
 db = sqlite3.connect("golf-sim.db", check_same_thread=False)
 db.row_factory = sqlite3.Row
 cursor = db.cursor()
+
+# operating hours
+start_time = time(6, 0)
+end_time = time(18, 0)
 
 # Creating 4 bays to start
 bays = [("Bay A",), ("Bay B",), ("Bay C",), ("Bay D",)]
@@ -25,6 +29,10 @@ def check_user(type, username):
 
 def check_reservation(id, date, timeslot):
     cursor.execute("SELECT EXISTS(SELECT 1 FROM reservations WHERE user_id = ? AND date = ? AND timeslot = ?)", (id, date, timeslot))
+    return cursor.fetchone()
+
+def check_bay(bay_name):
+    cursor.execute("SELECT id FROM bays WHERE name = ?", (bay_name,))
     return cursor.fetchone()
 
 def get_user(username):
@@ -61,19 +69,18 @@ def book_reservation():
     username = data["username"]
     date = data["date"]
     timeslot = data["timeslot"]
-    bayname = data["bay"]
+    bay_name = data["bay"]
 
     # check to see if valid timeslot
     potential_time = datetime.strptime(timeslot, "%H:%M").time()
-    if potential_time < time(6, 0) or potential_time > time(18, 0):
+    if potential_time < start_time or potential_time > end_time or potential_time.minute != 0:
         return jsonify({"message": "Please select a time within our operations"}), 403
 
     # check user first to see if they exist
     if check_user("username", username)[0] == 0:
         return jsonify({"message": "User does not exist, please create a user first"}), 403
 
-    cursor.execute("SELECT id FROM bays WHERE name = ?", (bayname,))
-    bay = cursor.fetchone()
+    bay = check_bay(bay_name)
     if bay is None:
         return jsonify({"message": "Bay does not exist"}), 403
     
@@ -120,6 +127,58 @@ def cancel_reservation():
 
     return jsonify({"message": "Successfully removed reservation"}), 200
 
+@app.route("/get_daily", methods=["GET"])
+def get_daily_report():
+    data = request.get_json()
+    date = data["date"]
+    bay_name = data["bay"]
+
+    bay = check_bay(bay_name)
+    if bay is None:
+        return jsonify({"message": "Bay does not exist"}), 403
+    
+    time_index = datetime.combine(datetime.today(), time(6, 0))
+    end_index = datetime.combine(datetime.today(), time(18, 0))
+    daily_reservations = []
+
+    while time_index <= end_index:
+        timeslot = time_index.strftime("%H:%M")
+        # got from claude, im not this good at sql
+        cursor.execute("SELECT u.username FROM reservations r JOIN users u ON r.user_id = u.id WHERE r.bay_id = ? AND r.date = ? AND r.timeslot = ?", (bay["id"], date, timeslot))
+        reservations = cursor.fetchall()
+        daily_reservations.append({
+            "timeslot": timeslot,
+            "users": [user["username"] for user in reservations],
+            "capacity": 2 - len(reservations)
+        })
+        time_index += timedelta(hours=1)
+    
+    return jsonify({"date": date, "bay": bay_name, "reservations": daily_reservations}), 200
+
+@app.route("/get_monthly", methods=["GET"])
+def get_monthly_report():
+    data = request.get_json()
+    date = data["date"]
+    converted = datetime.strptime(date, "%m/%d/%Y").strftime("%Y-%m")
+
+    cursor.execute("""
+        SELECT u.username, COUNT(*) as total_reservations
+        FROM reservations r
+        JOIN users u ON r.user_id = u.id
+        WHERE strftime('%Y-%m', substr(r.date, 7, 4) || '-' || substr(r.date, 1, 2) || '-' || substr(r.date, 4, 2)) = ?
+        GROUP BY u.username
+    """, (converted,)) # got from claude, im not this good at sql
+    rows = cursor.fetchall()
+    
+    report = []
+    for row in rows:
+        report.append({
+        "username": row["username"],
+        "total_reservations": row["total_reservations"],
+        "total_hours": row["total_reservations"]
+    })
+
+    return jsonify({"month": date, "report": report}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
