@@ -14,7 +14,7 @@ Libraries used
 - sqlalchemy.orm import declarative_base
 - sqlalchemy import ForeignKey
 
-CALLS (Everything expects a string)
+# CALLS (Everything expects a string) <br>
 POST
 - /add_user (Expecting: username, name, email)
 - /book (Expecting: username, date, timeslot, bay_name)
@@ -26,12 +26,12 @@ GET
 DELETE
 - /cancel_book (Expecting: username. date, timeslot)
 
-How to Run
+# How to Run
 - This should be as easy as running "python app.py"
 - Also the to run the tests do "pytest test.py -v"
 - make sure you have the proper libraries installed (I would've added the enviroment but the consensus is its bad to do that?)
 
-My Final Thoughts
+# My Final Thoughts
 Im overall very happy with the design of this and how functional it is. 
 I started initially with the database to plan out how I wanted this all to look which was helpful. In hindsight with the database I didn't 
 need the foreign key or UniqueConstraint's as I handled most of it anyway with the code checks. It is nice though if I missed something
