@@ -1,7 +1,6 @@
 from flask import Flask, jsonify, request
 import os
 from database.db import Base, engine
-import pandas as pd
 import sqlite3
 from datetime import datetime, time, timedelta
 
